@@ -217,7 +217,7 @@ export class OmniFocusTools {
         script += `
           end repeat
           
-          -- Also check subfolders with full path
+          -- Check subfolders (level 2)
           repeat with subfld in folders of fld
             set subfolderProjects to every project of subfld`;
         if (args.incompleteOnly || !args.includeCompleted) {
@@ -254,6 +254,46 @@ export class OmniFocusTools {
               end if`;
         }
         script += `
+            end repeat
+            
+            -- Check nested subfolders (level 3) - like HelixIntel
+            repeat with nestedSubfld in folders of subfld
+              set nestedSubfolderProjects to every project of nestedSubfld`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += ` whose completed is false and status is not dropped status`;
+        }
+        script += `
+              repeat with proj in nestedSubfolderProjects`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+                if completed of proj is false and status of proj is not dropped status then`;
+        }
+        script += `
+                  set projectInfo to name of proj & " - " & (status of proj as string) & " [Location: " & name of fld & " > " & name of subfld & " > " & name of nestedSubfld & "]"`;
+        if (args.emptyProjectsOnly) {
+            script += `
+                  set incompleteTaskCount to count of (tasks of proj whose completed is false)
+                  if incompleteTaskCount is 0 then
+                    set projectInfo to projectInfo & " [No incomplete tasks]"
+                    set projectList to projectList & projectInfo & "\\n"
+                  end if`;
+        }
+        else {
+            script += `
+                  set incompleteTaskCount to count of (tasks of proj whose completed is false)
+                  if incompleteTaskCount > 0 then
+                    set projectInfo to projectInfo & " [" & incompleteTaskCount & " incomplete tasks]"
+                  else
+                    set projectInfo to projectInfo & " [No incomplete tasks]"
+                  end if
+                  set projectList to projectList & projectInfo & "\\n"`;
+        }
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+                end if`;
+        }
+        script += `
+              end repeat
             end repeat
           end repeat
         end repeat
@@ -377,7 +417,44 @@ export class OmniFocusTools {
         set targetTask to missing value
         `;
         if (args.project) {
-            script += `set targetTask to first task of project "${args.project}" whose name is "${args.taskName}"`;
+            script += `
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.project}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.project}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.project}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.project}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          set targetTask to first task of targetProject whose name is "${args.taskName}"
+        end if`;
         }
         else {
             script += `set targetTask to first task whose name is "${args.taskName}"`;
@@ -499,8 +576,43 @@ export class OmniFocusTools {
         }
         if (args.newProject) {
             script += `
-          set targetProject to first project whose name is "${args.newProject}"
-          move targetTask to end of tasks of targetProject`;
+          set targetProject to missing value
+          
+          -- Search top level first
+          try
+            set targetProject to first project whose name is "${args.newProject}"
+          end try
+          
+          -- Search in all folders and subfolders if not found
+          if targetProject is missing value then
+            repeat with fld in every folder
+              -- Check projects in folder
+              try
+                set targetProject to first project of fld whose name is "${args.newProject}"
+                exit repeat
+              end try
+              -- Check subfolders
+              repeat with subfld in folders of fld
+                try
+                  set targetProject to first project of subfld whose name is "${args.newProject}"
+                  exit repeat
+                end try
+                -- Check nested subfolders
+                repeat with nestedSubfld in folders of subfld
+                  try
+                    set targetProject to first project of nestedSubfld whose name is "${args.newProject}"
+                    exit repeat
+                  end try
+                end repeat
+                if targetProject is not missing value then exit repeat
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+          end if
+          
+          if targetProject is not missing value then
+            move targetTask to end of tasks of targetProject
+          end if`;
         }
         if (args.newContext) {
             script += `
@@ -542,9 +654,46 @@ export class OmniFocusTools {
         }
         script += `
         if targetTask is not missing value then
-          set targetProject to first project whose name is "${args.toProject}"
-          move targetTask to end of tasks of targetProject
-          return "Task moved: " & name of targetTask & " to project " & name of targetProject
+          set targetProject to missing value
+          
+          -- Search top level first
+          try
+            set targetProject to first project whose name is "${args.toProject}"
+          end try
+          
+          -- Search in all folders and subfolders if not found
+          if targetProject is missing value then
+            repeat with fld in every folder
+              -- Check projects in folder
+              try
+                set targetProject to first project of fld whose name is "${args.toProject}"
+                exit repeat
+              end try
+              -- Check subfolders
+              repeat with subfld in folders of fld
+                try
+                  set targetProject to first project of subfld whose name is "${args.toProject}"
+                  exit repeat
+                end try
+                -- Check nested subfolders
+                repeat with nestedSubfld in folders of subfld
+                  try
+                    set targetProject to first project of nestedSubfld whose name is "${args.toProject}"
+                    exit repeat
+                  end try
+                end repeat
+                if targetProject is not missing value then exit repeat
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+          end if
+          
+          if targetProject is not missing value then
+            move targetTask to end of tasks of targetProject
+            return "Task moved: " & name of targetTask & " to project " & name of targetProject
+          else
+            return "Destination project not found: ${args.toProject}"
+          end if
         else
           return "Task not found: ${args.taskName}"
         end if
@@ -568,7 +717,40 @@ export class OmniFocusTools {
     async editProject(args) {
         let script = `tell application "OmniFocus"
       tell front document
-        set targetProject to first project whose name is "${args.projectName}"
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
         if targetProject is not missing value then`;
         if (args.newName) {
             script += `
@@ -656,7 +838,40 @@ export class OmniFocusTools {
     async deleteProject(args) {
         const script = `tell application "OmniFocus"
       tell front document
-        set targetProject to first project whose name is "${args.projectName}"
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
         if targetProject is not missing value then
           set projectName to name of targetProject
           delete targetProject
@@ -788,10 +1003,45 @@ export class OmniFocusTools {
     async archiveProject(args) {
         const script = `tell application "OmniFocus"
       tell front document
-        set targetProject to first project whose name is "${args.projectName}"
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
         if targetProject is not missing value then
-          set completed of targetProject to true
-          return "Project archived: " & name of targetProject
+          repeat with aTask in every task of targetProject
+            set completed of aTask to true
+          end repeat
+          return "Project archived (all tasks completed): " & name of targetProject
         else
           return "Project not found: ${args.projectName}"
         end if
@@ -851,31 +1101,41 @@ export class OmniFocusTools {
       tell front document
         set targetFolder to missing value
         
-        -- First try to find folder at top level
         try
           set targetFolder to first folder whose name is "${args.folderName}"
         end try
         
-        -- If not found, search in subfolders
         if targetFolder is missing value then
           repeat with fld in every folder
             try
               set targetFolder to first folder of fld whose name is "${args.folderName}"
               exit repeat
             end try
+            repeat with subfld in folders of fld
+              try
+                set targetFolder to first folder of subfld whose name is "${args.folderName}"
+                exit repeat
+              end try
+            end repeat
+            if targetFolder is not missing value then exit repeat
           end repeat
         end if
         
         if targetFolder is not missing value then
           set folderInfo to "Folder: " & name of targetFolder & "\\n"
           
-          -- Check if this is a subfolder and show parent
           repeat with parentFld in every folder
             repeat with subfld in folders of parentFld
               if id of subfld is equal to id of targetFolder then
                 set folderInfo to folderInfo & "Parent folder: " & name of parentFld & "\\n"
                 exit repeat
               end if
+              repeat with nestedSubfld in folders of subfld
+                if id of nestedSubfld is equal to id of targetFolder then
+                  set folderInfo to folderInfo & "Parent folder: " & name of parentFld & " > " & name of subfld & "\\n"
+                  exit repeat
+                end if
+              end repeat
             end repeat
           end repeat
           
@@ -886,14 +1146,12 @@ export class OmniFocusTools {
           set completedProjects to count of (projects of targetFolder whose completed is true)
           set folderInfo to folderInfo & "Completed projects: " & completedProjects & "\\n"
           
-          -- Check for subfolders
           set subfolderCount to count of folders of targetFolder
           if subfolderCount > 0 then
             set folderInfo to folderInfo & "Subfolders: " & subfolderCount & "\\n"
           end if
           
-          set folderInfo to folderInfo & "\\n"
-          set folderInfo to folderInfo & "Projects in this folder:\\n"
+          set folderInfo to folderInfo & "\\nProjects in this folder:\\n"
           repeat with proj in projects of targetFolder
             set projStatus to ""
             if completed of proj is true then
@@ -909,7 +1167,6 @@ export class OmniFocusTools {
             set folderInfo to folderInfo & "- " & name of proj & projStatus & "\\n"
           end repeat
           
-          -- Show subfolders if any
           if subfolderCount > 0 then
             set folderInfo to folderInfo & "\\nSubfolders:\\n"
             repeat with subfld in folders of targetFolder
@@ -1060,7 +1317,7 @@ export class OmniFocusTools {
             set hierarchyList to hierarchyList & "\\n"
           end repeat
           
-          -- Add subfolders
+          -- Add subfolders with recursive nesting
           set subfolders to folders of rootFolder
           repeat with subfolder in subfolders
             set hierarchyList to hierarchyList & "  📁 " & name of subfolder`;
@@ -1089,6 +1346,37 @@ export class OmniFocusTools {
         script += `
               set hierarchyList to hierarchyList & "\\n"
             end repeat
+            
+            -- Add nested subfolders (subfolders within subfolders)
+            set nestedSubfolders to folders of subfolder
+            repeat with nestedSubfolder in nestedSubfolders
+              set hierarchyList to hierarchyList & "    📁 " & name of nestedSubfolder`;
+        if (args.includeProjectCounts) {
+            script += `
+              set nestedProjectCount to count of projects of nestedSubfolder
+              set hierarchyList to hierarchyList & " (" & nestedProjectCount & " projects)"`;
+        }
+        script += `
+              set hierarchyList to hierarchyList & "\\n"
+              
+              -- Add projects in nested subfolder
+              set nestedProjectList to projects of nestedSubfolder
+              repeat with nestedProj in nestedProjectList
+                set hierarchyList to hierarchyList & "      📋 " & name of nestedProj
+                if completed of nestedProj then
+                  set hierarchyList to hierarchyList & " (completed)"
+                end if`;
+        if (args.includeTaskCounts) {
+            script += `
+                set nestedActiveTaskCount to count of (tasks of nestedProj whose completed is false)
+                if nestedActiveTaskCount > 0 then
+                  set hierarchyList to hierarchyList & " [" & nestedActiveTaskCount & " tasks]"
+                end if`;
+        }
+        script += `
+                set hierarchyList to hierarchyList & "\\n"
+              end repeat
+            end repeat
           end repeat
           
           set hierarchyList to hierarchyList & "\\n"
@@ -1098,15 +1386,21 @@ export class OmniFocusTools {
         set allProjects to every project
         set projectsInFolders to {}
         
-        -- Collect all projects that are in folders
+        -- Collect all projects that are in folders (including nested subfolders)
         repeat with fld in every folder
           repeat with proj in projects of fld
             set end of projectsInFolders to (id of proj)
           end repeat
-          -- Also check subfolders
+          -- Check subfolders
           repeat with subfld in folders of fld
             repeat with subproj in projects of subfld
               set end of projectsInFolders to (id of subproj)
+            end repeat
+            -- Check nested subfolders (subfolders within subfolders)
+            repeat with nestedSubfld in folders of subfld
+              repeat with nestedProj in projects of nestedSubfld
+                set end of projectsInFolders to (id of nestedProj)
+              end repeat
             end repeat
           end repeat
         end repeat

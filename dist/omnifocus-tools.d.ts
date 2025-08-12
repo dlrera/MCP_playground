@@ -14,6 +14,8 @@ export interface CreateProjectArgs {
 }
 export interface ListProjectsArgs {
     includeCompleted?: boolean;
+    incompleteOnly?: boolean;
+    emptyProjectsOnly?: boolean;
 }
 export interface ListTasksArgs {
     project?: string;

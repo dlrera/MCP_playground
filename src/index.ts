@@ -27,7 +27,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'create_task',
-        description: 'Create a new task in OmniFocus',
+        description: 'Create a new task in OmniFocus (searches for project in all folders)',
         inputSchema: {
           type: 'object',
           properties: {
@@ -41,7 +41,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             project: {
               type: 'string',
-              description: 'Optional project name to add the task to',
+              description: 'Optional project name to add the task to (searches all folders and subfolders)',
             },
             context: {
               type: 'string',
@@ -88,13 +88,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'list_projects',
-        description: 'List all active projects in OmniFocus',
+        description: 'List projects in OmniFocus with advanced filtering options',
         inputSchema: {
           type: 'object',
           properties: {
             includeCompleted: {
               type: 'boolean',
               description: 'Include completed projects in the list',
+            },
+            incompleteOnly: {
+              type: 'boolean',
+              description: 'Show only incomplete projects (same as includeCompleted: false)',
+            },
+            emptyProjectsOnly: {
+              type: 'boolean',
+              description: 'Show only projects that have no incomplete tasks',
             },
           },
         },

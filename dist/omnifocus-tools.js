@@ -36,8 +36,36 @@ export class OmniFocusTools {
         set taskID to id of newTask`;
         if (args.project) {
             script += `
-        set targetProject to first project whose name is "${args.project}"
-        move newTask to end of tasks of targetProject`;
+        set targetProject to missing value
+        
+        -- First try to find project at top level
+        try
+          set targetProject to first project whose name is "${args.project}"
+        end try
+        
+        -- If not found, search in all folders
+        if targetProject is missing value then
+          repeat with fld in every folder
+            try
+              set targetProject to first project of fld whose name is "${args.project}"
+              exit repeat
+            end try
+            -- Also check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.project}"
+                exit repeat
+              end try
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          move newTask to end of tasks of targetProject
+        else
+          error "Project not found: ${args.project}"
+        end if`;
         }
         if (args.context) {
             script += `
@@ -108,23 +136,128 @@ export class OmniFocusTools {
         let script = `tell application "OmniFocus"
       tell front document
         set projectList to ""
-        set allProjects to every project`;
-        if (!args.includeCompleted) {
-            script += ` whose completed is false`;
+        
+        -- Collect projects from top level with location info
+        set topLevelProjects to every project`;
+        // Apply proper filtering for incomplete projects (exclude both completed AND dropped)
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += ` whose completed is false and status is not dropped status`;
         }
         script += `
+        repeat with proj in topLevelProjects`;
+        // Add status filtering in the loop as well for double safety
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+          if completed of proj is false and status of proj is not dropped status then`;
+        }
+        script += `
+            set projectInfo to name of proj & " - " & (status of proj as string) & " [Location: Top Level]"`;
+        // Add task count and filtering logic
+        if (args.emptyProjectsOnly) {
+            script += `
+            set incompleteTaskCount to count of (tasks of proj whose completed is false)
+            if incompleteTaskCount is 0 then
+              set projectInfo to projectInfo & " [No incomplete tasks]"
+              set projectList to projectList & projectInfo & "\\n"
+            end if`;
+        }
+        else {
+            script += `
+            set incompleteTaskCount to count of (tasks of proj whose completed is false)
+            if incompleteTaskCount > 0 then
+              set projectInfo to projectInfo & " [" & incompleteTaskCount & " incomplete tasks]"
+            else
+              set projectInfo to projectInfo & " [No incomplete tasks]"
+            end if
+            set projectList to projectList & projectInfo & "\\n"`;
+        }
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+          end if`;
+        }
+        script += `
+        end repeat
+        
+        -- Collect projects from all folders and subfolders with explicit location
         repeat with fld in every folder
           set folderProjects to every project of fld`;
-        if (!args.includeCompleted) {
-            script += ` whose completed is false`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += ` whose completed is false and status is not dropped status`;
         }
         script += `
-          set allProjects to allProjects & folderProjects
-        end repeat`;
+          repeat with proj in folderProjects`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+            if completed of proj is false and status of proj is not dropped status then`;
+        }
         script += `
-        repeat with proj in allProjects
-          set projectList to projectList & name of proj & " - " & (status of proj as string) & "\\n"
+              set projectInfo to name of proj & " - " & (status of proj as string) & " [Location: " & name of fld & "]"`;
+        if (args.emptyProjectsOnly) {
+            script += `
+              set incompleteTaskCount to count of (tasks of proj whose completed is false)
+              if incompleteTaskCount is 0 then
+                set projectInfo to projectInfo & " [No incomplete tasks]"
+                set projectList to projectList & projectInfo & "\\n"
+              end if`;
+        }
+        else {
+            script += `
+              set incompleteTaskCount to count of (tasks of proj whose completed is false)
+              if incompleteTaskCount > 0 then
+                set projectInfo to projectInfo & " [" & incompleteTaskCount & " incomplete tasks]"
+              else
+                set projectInfo to projectInfo & " [No incomplete tasks]"
+              end if
+              set projectList to projectList & projectInfo & "\\n"`;
+        }
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+            end if`;
+        }
+        script += `
+          end repeat
+          
+          -- Also check subfolders with full path
+          repeat with subfld in folders of fld
+            set subfolderProjects to every project of subfld`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += ` whose completed is false and status is not dropped status`;
+        }
+        script += `
+            repeat with proj in subfolderProjects`;
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+              if completed of proj is false and status of proj is not dropped status then`;
+        }
+        script += `
+                set projectInfo to name of proj & " - " & (status of proj as string) & " [Location: " & name of fld & " > " & name of subfld & "]"`;
+        if (args.emptyProjectsOnly) {
+            script += `
+                set incompleteTaskCount to count of (tasks of proj whose completed is false)
+                if incompleteTaskCount is 0 then
+                  set projectInfo to projectInfo & " [No incomplete tasks]"
+                  set projectList to projectList & projectInfo & "\\n"
+                end if`;
+        }
+        else {
+            script += `
+                set incompleteTaskCount to count of (tasks of proj whose completed is false)
+                if incompleteTaskCount > 0 then
+                  set projectInfo to projectInfo & " [" & incompleteTaskCount & " incomplete tasks]"
+                else
+                  set projectInfo to projectInfo & " [No incomplete tasks]"
+                end if
+                set projectList to projectList & projectInfo & "\\n"`;
+        }
+        if (args.incompleteOnly || !args.includeCompleted) {
+            script += `
+              end if`;
+        }
+        script += `
+            end repeat
+          end repeat
         end repeat
+        
         return projectList
       end tell
     end tell`;
@@ -716,23 +849,75 @@ export class OmniFocusTools {
     async getFolderDetails(args) {
         const script = `tell application "OmniFocus"
       tell front document
-        set targetFolder to first folder whose name is "${args.folderName}"
+        set targetFolder to missing value
+        
+        -- First try to find folder at top level
+        try
+          set targetFolder to first folder whose name is "${args.folderName}"
+        end try
+        
+        -- If not found, search in subfolders
+        if targetFolder is missing value then
+          repeat with fld in every folder
+            try
+              set targetFolder to first folder of fld whose name is "${args.folderName}"
+              exit repeat
+            end try
+          end repeat
+        end if
+        
         if targetFolder is not missing value then
           set folderInfo to "Folder: " & name of targetFolder & "\\n"
+          
+          -- Check if this is a subfolder and show parent
+          repeat with parentFld in every folder
+            repeat with subfld in folders of parentFld
+              if id of subfld is equal to id of targetFolder then
+                set folderInfo to folderInfo & "Parent folder: " & name of parentFld & "\\n"
+                exit repeat
+              end if
+            end repeat
+          end repeat
+          
           set projectCount to count of projects of targetFolder
           set folderInfo to folderInfo & "Total projects: " & projectCount & "\\n"
           set activeProjects to count of (projects of targetFolder whose completed is false)
           set folderInfo to folderInfo & "Active projects: " & activeProjects & "\\n"
           set completedProjects to count of (projects of targetFolder whose completed is true)
-          set folderInfo to folderInfo & "Completed projects: " & completedProjects & "\\n\\n"
+          set folderInfo to folderInfo & "Completed projects: " & completedProjects & "\\n"
+          
+          -- Check for subfolders
+          set subfolderCount to count of folders of targetFolder
+          if subfolderCount > 0 then
+            set folderInfo to folderInfo & "Subfolders: " & subfolderCount & "\\n"
+          end if
+          
+          set folderInfo to folderInfo & "\\n"
           set folderInfo to folderInfo & "Projects in this folder:\\n"
           repeat with proj in projects of targetFolder
             set projStatus to ""
             if completed of proj is true then
               set projStatus to " (completed)"
+            else
+              set taskCount to count of (tasks of proj whose completed is false)
+              if taskCount > 0 then
+                set projStatus to " [" & taskCount & " tasks]"
+              else
+                set projStatus to " [No tasks]"
+              end if
             end if
             set folderInfo to folderInfo & "- " & name of proj & projStatus & "\\n"
           end repeat
+          
+          -- Show subfolders if any
+          if subfolderCount > 0 then
+            set folderInfo to folderInfo & "\\nSubfolders:\\n"
+            repeat with subfld in folders of targetFolder
+              set subProjectCount to count of projects of subfld
+              set folderInfo to folderInfo & "- " & name of subfld & " (" & subProjectCount & " projects)\\n"
+            end repeat
+          end if
+          
           return folderInfo
         else
           return "Folder not found: ${args.folderName}"

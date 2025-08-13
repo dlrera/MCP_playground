@@ -336,7 +336,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             {
                 name: 'archive_project',
-                description: 'Archive (complete) a project in OmniFocus',
+                description: 'Archive a project by setting its status to completed or dropped',
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -344,8 +344,116 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             type: 'string',
                             description: 'Name of the project to archive',
                         },
+                        status: {
+                            type: 'string',
+                            enum: ['completed', 'dropped'],
+                            description: 'Status to set for the project (completed or dropped). Defaults to completed.',
+                        },
                     },
                     required: ['projectName'],
+                },
+            },
+            {
+                name: 'set_project_status',
+                description: 'Set the status of a project to active, on-hold, completed, or dropped',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        projectName: {
+                            type: 'string',
+                            description: 'Name of the project to change status for',
+                        },
+                        status: {
+                            type: 'string',
+                            enum: ['active', 'on-hold', 'completed', 'dropped'],
+                            description: 'Status to set for the project',
+                        },
+                    },
+                    required: ['projectName', 'status'],
+                },
+            },
+            {
+                name: 'set_project_flag',
+                description: 'Set the flagged status of a project',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        projectName: {
+                            type: 'string',
+                            description: 'Name of the project to flag/unflag',
+                        },
+                        flagged: {
+                            type: 'boolean',
+                            description: 'Whether to flag (true) or unflag (false) the project',
+                        },
+                    },
+                    required: ['projectName', 'flagged'],
+                },
+            },
+            {
+                name: 'set_task_dates',
+                description: 'Set due date and/or defer date for a task',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        taskName: {
+                            type: 'string',
+                            description: 'Name of the task to update',
+                        },
+                        project: {
+                            type: 'string',
+                            description: 'Optional project name to narrow the search',
+                        },
+                        dueDate: {
+                            type: 'string',
+                            description: 'Due date in YYYY-MM-DD format (optional)',
+                        },
+                        deferDate: {
+                            type: 'string',
+                            description: 'Defer date in YYYY-MM-DD format (optional)',
+                        },
+                    },
+                    required: ['taskName'],
+                },
+            },
+            {
+                name: 'set_project_dates',
+                description: 'Set due date and/or defer date for a project',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        projectName: {
+                            type: 'string',
+                            description: 'Name of the project to update',
+                        },
+                        dueDate: {
+                            type: 'string',
+                            description: 'Due date in YYYY-MM-DD format (optional)',
+                        },
+                        deferDate: {
+                            type: 'string',
+                            description: 'Defer date in YYYY-MM-DD format (optional)',
+                        },
+                    },
+                    required: ['projectName'],
+                },
+            },
+            {
+                name: 'move_project',
+                description: 'Get guidance for manually moving a project to a different folder (OmniFocus does not support automated project moving)',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        projectName: {
+                            type: 'string',
+                            description: 'Name of the project to move',
+                        },
+                        toFolder: {
+                            type: 'string',
+                            description: 'Name of the destination folder',
+                        },
+                    },
+                    required: ['projectName', 'toFolder'],
                 },
             },
             {
@@ -468,6 +576,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return await omniFocusTools.setTaskFlag(args);
             case 'archive_project':
                 return await omniFocusTools.archiveProject(args);
+            case 'set_project_status':
+                return await omniFocusTools.setProjectStatus(args);
+            case 'set_project_flag':
+                return await omniFocusTools.setProjectFlag(args);
+            case 'set_task_dates':
+                return await omniFocusTools.setTaskDates(args);
+            case 'set_project_dates':
+                return await omniFocusTools.setProjectDates(args);
+            case 'move_project':
+                return await omniFocusTools.moveProject(args);
             case 'list_folders':
                 return await omniFocusTools.listFolders(args);
             case 'get_folder_details':

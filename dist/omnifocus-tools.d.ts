@@ -73,6 +73,30 @@ export interface SetTaskFlagArgs {
 }
 export interface ArchiveProjectArgs {
     projectName: string;
+    status?: 'completed' | 'dropped';
+}
+export interface SetProjectStatusArgs {
+    projectName: string;
+    status: 'active' | 'on-hold' | 'completed' | 'dropped';
+}
+export interface SetProjectFlagArgs {
+    projectName: string;
+    flagged: boolean;
+}
+export interface SetTaskDatesArgs {
+    taskName: string;
+    project?: string;
+    dueDate?: string;
+    deferDate?: string;
+}
+export interface SetProjectDatesArgs {
+    projectName: string;
+    dueDate?: string;
+    deferDate?: string;
+}
+export interface MoveProjectArgs {
+    projectName: string;
+    toFolder: string;
 }
 export interface ListFoldersArgs {
     includeProjectCounts?: boolean;
@@ -181,6 +205,36 @@ export declare class OmniFocusTools {
         }[];
     }>;
     archiveProject(args: ArchiveProjectArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    setProjectStatus(args: SetProjectStatusArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    setProjectFlag(args: SetProjectFlagArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    setTaskDates(args: SetTaskDatesArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    setProjectDates(args: SetProjectDatesArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    moveProject(args: MoveProjectArgs): Promise<{
         content: {
             type: string;
             text: string;

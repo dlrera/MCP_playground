@@ -92,6 +92,35 @@ export interface SetTaskFlagArgs {
 
 export interface ArchiveProjectArgs {
   projectName: string;
+  status?: 'completed' | 'dropped';
+}
+
+export interface SetProjectStatusArgs {
+  projectName: string;
+  status: 'active' | 'on-hold' | 'completed' | 'dropped';
+}
+
+export interface SetProjectFlagArgs {
+  projectName: string;
+  flagged: boolean;
+}
+
+export interface SetTaskDatesArgs {
+  taskName: string;
+  project?: string;
+  dueDate?: string;
+  deferDate?: string;
+}
+
+export interface SetProjectDatesArgs {
+  projectName: string;
+  dueDate?: string;
+  deferDate?: string;
+}
+
+export interface MoveProjectArgs {
+  projectName: string;
+  toFolder: string;
 }
 
 export interface ListFoldersArgs {
@@ -471,6 +500,9 @@ export class OmniFocusTools {
   }
 
   async listTasks(args: ListTasksArgs = {}) {
+    // Default to excluding completed tasks unless explicitly requested
+    const includeCompleted = args.includeCompleted === true;
+    
     let script = `tell application "OmniFocus"
       tell front document
         set taskList to ""
@@ -479,21 +511,61 @@ export class OmniFocusTools {
         -- Get project tasks`;
     
     if (args.project) {
+      // Use nested search for specific project
       script += `
-        set projectTasks to every task of project "${args.project}"`;
-      if (!args.includeCompleted) {
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.project}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.project}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.project}"
+                exit repeat
+              end try
+              -- Check nested subfolders (3-level deep like HelixIntel)
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.project}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          set projectTasks to every task of targetProject`;
+      if (!includeCompleted) {
         script += ` whose completed is false`;
       }
       if (args.context) {
         script += ` and primary tag's name is "${args.context}"`;
       }
       script += `
-        set allTasks to projectTasks`;
+          set allTasks to projectTasks
+        else
+          return "ERROR: Project not found: ${args.project}"
+        end if`;
     } else {
       script += `
+        -- Get tasks from top-level projects
         repeat with proj in every project
           set projTasks to every task of proj`;
-      if (!args.includeCompleted) {
+      if (!includeCompleted) {
         script += ` whose completed is false`;
       }
       if (args.context) {
@@ -503,11 +575,12 @@ export class OmniFocusTools {
           set allTasks to allTasks & projTasks
         end repeat
         
-        -- Get tasks from projects in folders
+        -- Get tasks from projects in folders (3-level deep search)
         repeat with fld in every folder
+          -- Level 1: Direct projects in folder
           repeat with proj in every project of fld
             set projTasks to every task of proj`;
-      if (!args.includeCompleted) {
+      if (!includeCompleted) {
         script += ` whose completed is false`;
       }
       if (args.context) {
@@ -516,11 +589,41 @@ export class OmniFocusTools {
       script += `
             set allTasks to allTasks & projTasks
           end repeat
+          
+          -- Level 2: Projects in subfolders
+          repeat with subfld in folders of fld
+            repeat with proj in every project of subfld
+              set projTasks to every task of proj`;
+      if (!includeCompleted) {
+        script += ` whose completed is false`;
+      }
+      if (args.context) {
+        script += ` and primary tag's name is "${args.context}"`;
+      }
+      script += `
+              set allTasks to allTasks & projTasks
+            end repeat
+            
+            -- Level 3: Projects in nested subfolders (like HelixIntel)
+            repeat with nestedSubfld in folders of subfld
+              repeat with proj in every project of nestedSubfld
+                set projTasks to every task of proj`;
+      if (!includeCompleted) {
+        script += ` whose completed is false`;
+      }
+      if (args.context) {
+        script += ` and primary tag's name is "${args.context}"`;
+      }
+      script += `
+                set allTasks to allTasks & projTasks
+              end repeat
+            end repeat
+          end repeat
         end repeat
         
         -- Get inbox tasks
         set inboxTasks to every inbox task`;
-      if (!args.includeCompleted) {
+      if (!includeCompleted) {
         script += ` whose completed is false`;
       }
       if (args.context) {
@@ -1153,8 +1256,42 @@ export class OmniFocusTools {
         set targetTask to missing value
         `;
 
+    // Enhanced task search with nested folder support
     if (args.project) {
-      script += `set targetTask to first task of project "${args.project}" whose name is "${args.taskName}"`;
+      script += `
+        set targetProject to missing value
+        
+        -- Search for project in nested folders
+        try
+          set targetProject to first project whose name is "${args.project}"
+        end try
+        
+        if targetProject is missing value then
+          repeat with fld in every folder
+            try
+              set targetProject to first project of fld whose name is "${args.project}"
+              exit repeat
+            end try
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.project}"
+                exit repeat
+              end try
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.project}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          set targetTask to first task of targetProject whose name is "${args.taskName}"
+        end if`;
     } else {
       script += `set targetTask to first task whose name is "${args.taskName}"`;
     }
@@ -1222,10 +1359,40 @@ export class OmniFocusTools {
         end if
         
         if targetProject is not missing value then
-          repeat with aTask in every task of targetProject
-            set completed of aTask to true
-          end repeat
-          return "Project archived (all tasks completed): " & name of targetProject
+          try
+            set currentStatus to status of targetProject
+            set statusText to "${args.status || 'completed'}"
+            
+            if statusText is "dropped" then
+              mark dropped targetProject
+              return "Project " & name of targetProject & " status changed to DROPPED"
+            else
+              -- Default to completed status  
+              if statusText is "completed" then
+                -- Complete all remaining tasks first
+                set taskCount to 0
+                set completedCount to 0
+                repeat with aTask in every task of targetProject
+                  set taskCount to taskCount + 1
+                  try
+                    if completed of aTask is false then
+                      set completed of aTask to true
+                      set completedCount to completedCount + 1
+                    end if
+                  on error
+                    -- Skip tasks that cannot be completed
+                  end try
+                end repeat
+                
+                -- Project will complete automatically when all tasks are done
+                return "Project " & name of targetProject & " - completed " & completedCount & " of " & taskCount & " tasks. Project will complete automatically."
+              else
+                return "Invalid status. Use completed or dropped"
+              end if
+            end if
+          on error errMsg
+            return "Project found but error changing status: " & errMsg
+          end try
         else
           return "Project not found: ${args.projectName}"
         end if
@@ -1244,6 +1411,408 @@ export class OmniFocusTools {
       };
     } catch (error) {
       throw new Error(`Failed to archive project: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setProjectStatus(args: SetProjectStatusArgs) {
+    const script = `tell application "OmniFocus"
+      tell front document
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is missing value then
+          return "ERROR: Project not found: ${args.projectName}"
+        end if
+        
+        set currentStatus to (status of targetProject) as string
+        set statusText to "${args.status}"
+        
+        try
+          if statusText is "dropped" then
+            mark dropped targetProject
+            return "SUCCESS: Project " & name of targetProject & " status changed from " & currentStatus & " to DROPPED"
+          else if statusText is "completed" then
+            -- Complete all tasks first, then project completes automatically
+            repeat with aTask in every task of targetProject
+              try
+                if completed of aTask is false then
+                  set completed of aTask to true
+                end if
+              on error
+                -- Skip tasks that cannot be completed
+              end try
+            end repeat
+            return "SUCCESS: Project " & name of targetProject & " tasks completed - project will complete automatically"
+          else if statusText is "active" then
+            mark resumed targetProject
+            return "SUCCESS: Project " & name of targetProject & " status changed from " & currentStatus & " to ACTIVE"
+          else if statusText is "on-hold" then
+            mark paused targetProject
+            return "SUCCESS: Project " & name of targetProject & " status changed from " & currentStatus & " to ON-HOLD"
+          else
+            return "ERROR: Invalid status. Use: active, on-hold, completed, or dropped"
+          end if
+        on error errMsg
+          return "ERROR: Failed to change status - " & errMsg
+        end try
+      end tell
+    end tell`;
+
+    try {
+      const result = await this.runAppleScript(script);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to set project status: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setProjectFlag(args: SetProjectFlagArgs) {
+    const script = `tell application "OmniFocus"
+      tell front document
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is missing value then
+          return "ERROR: Project not found: ${args.projectName}"
+        end if
+        
+        set flagged of targetProject to ${args.flagged}
+        return "SUCCESS: Project " & name of targetProject & " flagged set to ${args.flagged}"
+      end tell
+    end tell`;
+
+    try {
+      const result = await this.runAppleScript(script);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to set project flag: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setTaskDates(args: SetTaskDatesArgs) {
+    let script = `tell application "OmniFocus"
+      tell front document
+        set targetTask to missing value
+        `;
+
+    // Task search logic with nested folder support
+    if (args.project) {
+      script += `
+        set targetProject to missing value
+        
+        -- Search for project in nested folders
+        try
+          set targetProject to first project whose name is "${args.project}"
+        end try
+        
+        if targetProject is missing value then
+          repeat with fld in every folder
+            try
+              set targetProject to first project of fld whose name is "${args.project}"
+              exit repeat
+            end try
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.project}"
+                exit repeat
+              end try
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.project}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          set targetTask to first task of targetProject whose name is "${args.taskName}"
+        end if`;
+    } else {
+      script += `set targetTask to first task whose name is "${args.taskName}"`;
+    }
+
+    script += `
+        if targetTask is missing value then
+          return "ERROR: Task not found: ${args.taskName}"
+        end if
+        `;
+
+    if (args.dueDate) {
+      script += `
+        set due date of targetTask to date "${args.dueDate}"`;
+    }
+
+    if (args.deferDate) {
+      script += `
+        set defer date of targetTask to date "${args.deferDate}"`;
+    }
+
+    script += `
+        return "SUCCESS: Task " & name of targetTask & " dates updated"
+      end tell
+    end tell`;
+
+    try {
+      const result = await this.runAppleScript(script);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to set task dates: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setProjectDates(args: SetProjectDatesArgs) {
+    const script = `tell application "OmniFocus"
+      tell front document
+        set targetProject to missing value
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is missing value then
+          return "ERROR: Project not found: ${args.projectName}"
+        end if
+        
+        ${args.dueDate ? `set due date of targetProject to date "${args.dueDate}"` : ''}
+        ${args.deferDate ? `set defer date of targetProject to date "${args.deferDate}"` : ''}
+        
+        return "SUCCESS: Project " & name of targetProject & " dates updated"
+      end tell
+    end tell`;
+
+    try {
+      const result = await this.runAppleScript(script);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to set project dates: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async moveProject(args: MoveProjectArgs) {
+    const script = `tell application "OmniFocus"
+      tell front document
+        set targetProject to missing value
+        set targetFolder to missing value
+        
+        -- Search for project in nested folders
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+        end try
+        
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                exit repeat
+              end try
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is missing value then
+          return "ERROR: Project not found: ${args.projectName}"
+        end if
+        
+        -- Search for destination folder in nested structure
+        try
+          set targetFolder to first folder whose name is "${args.toFolder}"
+        end try
+        
+        if targetFolder is missing value then
+          repeat with fld in every folder
+            if name of fld is "${args.toFolder}" then
+              set targetFolder to fld
+              exit repeat
+            end if
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              if name of subfld is "${args.toFolder}" then
+                set targetFolder to subfld
+                exit repeat
+              end if
+              -- Check nested subfolders
+              repeat with nestedSubfld in folders of subfld
+                if name of nestedSubfld is "${args.toFolder}" then
+                  set targetFolder to nestedSubfld
+                  exit repeat
+                end if
+              end repeat
+              if targetFolder is not missing value then exit repeat
+            end repeat
+            if targetFolder is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetFolder is missing value then
+          return "ERROR: Destination folder not found: ${args.toFolder}"
+        end if
+        
+        -- Get current location for confirmation
+        set currentLocation to "Top Level"
+        if folder of targetProject is not missing value then
+          set currentLocation to name of folder of targetProject
+        end if
+        
+        -- Get full path for current location (simplified)
+        set currentPath to currentLocation
+        
+        -- Get full path for destination (simplified)  
+        set destinationPath to name of targetFolder
+        
+        return "MANUAL MOVE REQUIRED: Project " & name of targetProject & " found at [" & currentPath & "]. Target folder " & name of targetFolder & " confirmed at [" & destinationPath & "]. OmniFocus does not support automated project moving via AppleScript. Please manually drag the project in OmniFocus from " & currentPath & " to " & destinationPath & "."
+      end tell
+    end tell`;
+
+    try {
+      const result = await this.runAppleScript(script);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to move project: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

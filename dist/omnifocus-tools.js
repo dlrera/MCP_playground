@@ -1986,5 +1986,108 @@ export class OmniFocusTools {
             throw new Error(`Failed to list folder hierarchy: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
+    async getProjectLink(args) {
+        const format = args.format || 'markdown';
+        const script = `tell application "OmniFocus"
+      tell front document
+        set targetProject to missing value
+        set projectLocation to ""
+        
+        -- Search top level first
+        try
+          set targetProject to first project whose name is "${args.projectName}"
+          set projectLocation to "Top Level"
+        end try
+        
+        -- Search in all folders and subfolders if not found
+        if targetProject is missing value then
+          repeat with fld in every folder
+            -- Check projects in folder
+            try
+              set targetProject to first project of fld whose name is "${args.projectName}"
+              set projectLocation to name of fld
+              exit repeat
+            end try
+            -- Check subfolders
+            repeat with subfld in folders of fld
+              try
+                set targetProject to first project of subfld whose name is "${args.projectName}"
+                set projectLocation to name of fld & " > " & name of subfld
+                exit repeat
+              end try
+              -- Check nested subfolders (3-level deep like HelixIntel)
+              repeat with nestedSubfld in folders of subfld
+                try
+                  set targetProject to first project of nestedSubfld whose name is "${args.projectName}"
+                  set projectLocation to name of fld & " > " & name of subfld & " > " & name of nestedSubfld
+                  exit repeat
+                end try
+              end repeat
+              if targetProject is not missing value then exit repeat
+            end repeat
+            if targetProject is not missing value then exit repeat
+          end repeat
+        end if
+        
+        if targetProject is not missing value then
+          -- Get project ID for more reliable linking
+          set projectID to id of targetProject
+          set projectName to name of targetProject
+          
+          -- Return project info for link generation
+          return projectName & "|" & projectID & "|" & projectLocation
+        else
+          return "ERROR: Project not found: ${args.projectName}"
+        end if
+      end tell
+    end tell`;
+        try {
+            const result = await this.runAppleScript(script);
+            if (result.startsWith('ERROR:')) {
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: result,
+                        },
+                    ],
+                };
+            }
+            const [projectName, projectID, location] = result.split('|');
+            // URL encode the project name for the URL scheme
+            const encodedName = encodeURIComponent(projectName);
+            const omniFocusURL = `omnifocus:///task/${projectID}`;
+            let formattedLink;
+            switch (format) {
+                case 'url':
+                    formattedLink = omniFocusURL;
+                    break;
+                case 'html':
+                    formattedLink = `<a href="${omniFocusURL}">${projectName}</a>`;
+                    break;
+                case 'markdown':
+                default:
+                    formattedLink = `[${projectName}](${omniFocusURL})`;
+                    break;
+            }
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: `Project Link Generated:
+Name: ${projectName}
+Location: ${location}
+URL: ${omniFocusURL}
+
+${format.toUpperCase()} Format:
+${formattedLink}`,
+                    },
+                ],
+            };
+        }
+        catch (error) {
+            throw new Error(`Failed to get project link: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
 }
 //# sourceMappingURL=omnifocus-tools.js.map

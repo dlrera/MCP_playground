@@ -549,6 +549,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      {
+        name: 'get_project_link',
+        description: 'Get a hyperlink to a specific project for use in markdown notes or other documents',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectName: {
+              type: 'string',
+              description: 'Name of the project to get link for',
+            },
+            format: {
+              type: 'string',
+              enum: ['url', 'markdown', 'html'],
+              description: 'Format for the link (url, markdown, or html). Defaults to markdown.',
+            },
+          },
+          required: ['projectName'],
+        },
+      },
     ],
   };
 });
@@ -608,6 +627,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await omniFocusTools.getTagDetails(args as any);
       case 'list_folder_hierarchy':
         return await omniFocusTools.listFolderHierarchy(args as any);
+      case 'get_project_link':
+        return await omniFocusTools.getProjectLink(args as any);
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

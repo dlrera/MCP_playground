@@ -117,6 +117,10 @@ export interface ListFolderHierarchyArgs {
     includeTaskCounts?: boolean;
     includeEmptyFolders?: boolean;
 }
+export interface GetProjectLinkArgs {
+    projectName: string;
+    format?: 'url' | 'markdown' | 'html';
+}
 export declare class OmniFocusTools {
     private runAppleScript;
     private formatDate;
@@ -265,6 +269,12 @@ export declare class OmniFocusTools {
         }[];
     }>;
     listFolderHierarchy(args?: ListFolderHierarchyArgs): Promise<{
+        content: {
+            type: string;
+            text: string;
+        }[];
+    }>;
+    getProjectLink(args: GetProjectLinkArgs): Promise<{
         content: {
             type: string;
             text: string;

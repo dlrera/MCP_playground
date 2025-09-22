@@ -23,11 +23,15 @@ const server = new Server(
 const omniFocusTools = new OmniFocusTools();
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  // IMPORTANT USAGE NOTES FOR CLAUDE/LLMs:
+  // - Always use 'project' parameter with the project NAME (e.g., "Hardware Store", not an ID)
+  // - Always include 'estimatedMinutes' when creating tasks
+  // - When editing tasks moved from inbox, include the 'project' parameter
   return {
     tools: [
       {
         name: 'create_task',
-        description: 'Create a new task in OmniFocus (searches for project in all folders)',
+        description: 'Create a new task in OmniFocus. IMPORTANT: Use the "project" parameter with the project NAME (not ID). Always include "estimatedMinutes" for task duration.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -41,11 +45,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             project: {
               type: 'string',
-              description: 'Optional project name to add the task to (searches all folders and subfolders)',
+              description: 'Project NAME to add the task to (e.g., "Hardware Store", "Weekly Review"). Searches all folders.',
             },
             project_id: {
               type: 'string',
-              description: 'Optional OmniFocus project ID to add the task to (use either project or project_id, not both)',
+              description: 'DEPRECATED - Use "project" with project name instead. OmniFocus project ID (only if you have the ID).',
             },
             context: {
               type: 'string',
@@ -61,7 +65,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             estimatedMinutes: {
               type: 'number',
-              description: 'Optional estimated duration in minutes',
+              description: 'STRONGLY RECOMMENDED: Estimated duration in minutes for the task',
             },
           },
           required: ['name'],
@@ -174,7 +178,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'edit_task',
-        description: 'Edit an existing task in OmniFocus',
+        description: 'Edit an existing task in OmniFocus. IMPORTANT: If the task was moved from inbox to a project, include the "project" parameter with the project NAME to help locate it.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -184,7 +188,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             project: {
               type: 'string',
-              description: 'Optional project name to narrow the search',
+              description: 'Project NAME where the task is located (helps find tasks moved from inbox). Use the actual project name like "Hardware Store".',
             },
             newName: {
               type: 'string',

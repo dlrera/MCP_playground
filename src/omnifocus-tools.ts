@@ -7,6 +7,7 @@ export interface CreateTaskArgs {
   name: string;
   note?: string;
   project?: string;
+  project_id?: string;  // Support for OmniFocus project ID
   context?: string;
   dueDate?: string;
   deferDate?: string;
@@ -220,6 +221,7 @@ export class OmniFocusTools {
     const escapedName = this.escapeAppleScriptString(args.name);
     const escapedNote = args.note ? this.escapeAppleScriptString(args.note) : '';
     const escapedProject = args.project ? this.escapeAppleScriptString(args.project) : '';
+    const projectId = args.project_id;  // Handle project_id parameter
 
     let script = `tell application "OmniFocus"
       tell front document
@@ -241,8 +243,35 @@ export class OmniFocusTools {
         
         set taskID to id of newTask`;
 
-    if (args.project) {
-      script += `
+    if (args.project || args.project_id) {
+      if (args.project_id) {
+        // Handle project_id - look up project by ID
+        script += `
+        set targetProject to missing value
+
+        -- Find project by ID
+        try
+          set targetProject to project id "${projectId}"
+        on error
+          -- If direct ID lookup fails, try flattened projects
+          try
+            repeat with proj in (every flattened project)
+              if id of proj is "${projectId}" then
+                set targetProject to proj
+                exit repeat
+              end if
+            end repeat
+          end try
+        end try
+
+        if targetProject is not missing value then
+          set assigned container of newTask to targetProject
+        else
+          error "Project not found with ID: ${projectId}"
+        end if`;
+      } else {
+        // Handle project name (existing logic)
+        script += `
         set targetProject to missing value
 
         -- First try to find project at top level
@@ -263,6 +292,7 @@ export class OmniFocusTools {
         else
           error "Project not found: ${escapedProject}"
         end if`;
+      }
     }
 
     if (args.context) {
@@ -970,11 +1000,19 @@ export class OmniFocusTools {
         try
           set targetTask to first inbox task whose name is "${escapedTaskName}"
         end try
-        
-        -- If not in inbox, search all projects
+
+        -- If not in inbox, search all flattened tasks (includes all projects)
         if targetTask is missing value then
           try
-            set targetTask to first task whose name is "${escapedTaskName}"
+            set targetTask to first flattened task whose name is "${escapedTaskName}" and completed is false
+          on error
+            -- Fallback: search through all projects manually
+            repeat with proj in (every flattened project)
+              try
+                set targetTask to first task of proj whose name is "${escapedTaskName}"
+                if targetTask is not missing value then exit repeat
+              end try
+            end repeat
           end try
         end if`;
     }

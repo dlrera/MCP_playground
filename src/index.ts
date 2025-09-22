@@ -43,6 +43,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description: 'Optional project name to add the task to (searches all folders and subfolders)',
             },
+            project_id: {
+              type: 'string',
+              description: 'Optional OmniFocus project ID to add the task to (use either project or project_id, not both)',
+            },
             context: {
               type: 'string',
               description: 'Optional context/tag for the task',
